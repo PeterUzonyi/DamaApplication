@@ -93,12 +93,7 @@ function getSimpleMoves(board: Piece[][], pos: Position, boardSize: number): Pos
   return moves;
 }
 
-function getCaptureMoves(
-  board: Piece[][],
-  pos: Position,
-  excluded: Position[] = [],
-  boardSize: number
-): Position[] {
+function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] = [], boardSize: number): Position[] {
   const piece = board[pos.row][pos.col];
   if (!piece) return [];
 
@@ -170,6 +165,13 @@ function getCaptureMoves(
   return moves;
 }
 
+function simulateMove(board: Piece[][], from: Position, to: Position): Piece[][] {
+  const newBoard = board.map(r => [...r]);
+  newBoard[to.row][to.col] = newBoard[from.row][from.col];
+  newBoard[from.row][from.col] = null;
+  return newBoard;
+}
+
 function findCapturedPosition(board: Piece[][], from: Position, to: Position): Position | null {
   const drow = Math.sign(to.row - from.row);
   const dcol = Math.sign(to.col - from.col);
@@ -185,6 +187,75 @@ function findCapturedPosition(board: Piece[][], from: Position, to: Position): P
   }
 
   return null;
+}
+
+function findMaxCaptureSequences(board: Piece[][], pos: Position, excluded: Position[], boardSize: number): Position[][] {
+  const nextCaptures = getCaptureMoves(board, pos, excluded, boardSize);
+
+  if (nextCaptures.length === 0) {
+    return [[]];
+  }
+
+  const sequences: Position[][] = [];
+
+  for (const target of nextCaptures) {
+    const capturedPos = findCapturedPosition(board, pos, target);
+    if (!capturedPos) continue;
+
+    const newExcluded = [...excluded, capturedPos];
+    const simulatedBoard = simulateMove(board, pos, target);
+
+    const continuations = findMaxCaptureSequences(simulatedBoard, target, newExcluded, boardSize);
+
+    for (const cont of continuations) {
+      sequences.push([target, ...cont]);
+    }
+  }
+
+  return sequences;
+}
+
+function getMaxCaptureMoves(board: Piece[][], pos: Position, excluded: Position[], boardSize: number): Position[] {
+  const sequences = findMaxCaptureSequences(board, pos, excluded, boardSize);
+
+  let maxLen = 0;
+  for (const seq of sequences) {
+    if (seq.length > maxLen) maxLen = seq.length;
+  }
+  if (maxLen === 0) return [];
+
+  return sequences
+    .filter(seq => seq.length === maxLen)
+    .map(seq => seq[0]);
+}
+
+function getMandatoryMaxCaptureFirstSteps(
+  board: Piece[][],
+  player: PieceColor,
+  boardSize: number
+): Position[] {
+  let maxLength = 0;
+  const firstStepsByPosition: { from: Position; to: Position; length: number }[] = [];
+
+  for (let row = 0; row < boardSize; row++) {
+    for (let col = 0; col < boardSize; col++) {
+      if (board[row][col]?.color === player) {
+        const sequences = findMaxCaptureSequences(board, { row, col }, [], boardSize);
+        for (const seq of sequences) {
+          if (seq.length === 0) continue; // nem ütés-sorozat
+          firstStepsByPosition.push({ from: { row, col }, to: seq[0], length: seq.length });
+          if (seq.length > maxLength) maxLength = seq.length;
+        }
+      }
+    }
+  }
+
+  if (maxLength === 0) return []; // nincs kötelező ütés
+
+  // Csak azokat az első lépéseket adjuk vissza, amik egy maximális hosszúságú sorozathoz tartoznak
+  return firstStepsByPosition
+    .filter(s => s.length === maxLength)
+    .map(s => s.to);
 }
 
 function boardHasAnyCapture(
@@ -250,7 +321,22 @@ export default function Board() {
       const mustCapture =
         isChainCapture ||
         boardHasAnyCapture(board, selectedPiece.color, capturedPositions, rules.boardSize);
-      const captureMoves = getCaptureMoves(board, selected, capturedPositions, rules.boardSize);
+      let captureMoves = getCaptureMoves(board, selected, capturedPositions, rules.boardSize);
+
+      // Nemzetközi szabály: az ütés-lánc ELSŐ lépésénél csak a maximális hosszúságú sorozatokat engedjük
+      if (rules.mandatoryMaximumCapture && mustCapture) {
+        if (!isChainCapture) {
+        // A lánc ELSŐ lépése: az összes bábu közül a leghosszabb sorozatot választjuk ki
+            const maxFirstSteps = getMandatoryMaxCaptureFirstSteps(board, selectedPiece.color, rules.boardSize);
+            captureMoves = captureMoves.filter(m =>
+            maxFirstSteps.some(s => s.row === m.row && s.col === m.col)
+            );
+        } else {
+        // A lánc FOLYTATÁSA: az aktuális pozícióból újra a leghosszabb folytatást kényszerítjük ki
+            captureMoves = getMaxCaptureMoves(board, selected, capturedPositions, rules.boardSize);
+        }
+      }
+
       const simpleMoves = isChainCapture ? [] : getSimpleMoves(board, selected, rules.boardSize);
       const legalMoves = mustCapture ? captureMoves : [...simpleMoves, ...captureMoves];
 
