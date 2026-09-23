@@ -1,27 +1,51 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Pressable, Text } from 'react-native';
 
-
-const BOARD_SIZE = 8;
 type PieceColor = 'white' | 'black';
 type PieceData = { color: PieceColor; isKing: boolean };
 type Piece = PieceData | null;
+type Position = { row: number; col: number };
+type Variant = 'russian' | 'international';
 
-function createInitialBoard(): Piece[][] {
-  const board: Piece[][] = Array.from({ length: BOARD_SIZE }, () =>
-    Array(BOARD_SIZE).fill(null)
+type RuleSet = {
+  boardSize: number;
+  flyingKing: boolean;
+  mandatoryMaximumCapture: boolean;
+  promotionDuringCaptureRequiresStop: boolean;
+};
+
+const RUSSIAN_RULES: RuleSet = {
+  boardSize: 8,
+  flyingKing: true,
+  mandatoryMaximumCapture: false,
+  promotionDuringCaptureRequiresStop: false,
+};
+
+const INTERNATIONAL_RULES: RuleSet = {
+  boardSize: 10,
+  flyingKing: true,
+  mandatoryMaximumCapture: true,
+  promotionDuringCaptureRequiresStop: true,
+};
+
+function createInitialBoard(boardSize: number): Piece[][] {
+  const board: Piece[][] = Array.from({ length: boardSize }, () =>
+    Array(boardSize).fill(null)
   );
 
-  for (let row = 0; row < BOARD_SIZE; row++) {
-    for (let col = 0; col < BOARD_SIZE; col++) {
+  // A kezdő sorok száma a tábla mérete alapján (8x8-nál 3, 10x10-nél 4 sor)
+  const rowsOfPieces = boardSize === 10 ? 4 : 3;
+
+  for (let row = 0; row < boardSize; row++) {
+    for (let col = 0; col < boardSize; col++) {
       const isDark = (row + col) % 2 === 1;
       if (!isDark) {
         continue;
       }
 
-      if (row < 3) {
+      if (row < rowsOfPieces) {
         board[row][col] = { color: 'black', isKing: false };
-      } else if (row > 4) {
+      } else if (row > boardSize - 1 - rowsOfPieces) {
         board[row][col] = { color: 'white', isKing: false };
       }
     }
@@ -30,13 +54,11 @@ function createInitialBoard(): Piece[][] {
   return board;
 }
 
-type Position = { row: number; col: number };
-
-function isOnBoard(row: number, col: number): boolean {
-  return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+function isOnBoard(row: number, col: number, boardSize: number): boolean {
+  return row >= 0 && row < boardSize && col >= 0 && col < boardSize;
 }
 
-function getSimpleMoves(board: Piece[][], pos: Position): Position[] {
+function getSimpleMoves(board: Piece[][], pos: Position, boardSize: number): Position[] {
   const piece = board[pos.row][pos.col];
   if (!piece) return [];
 
@@ -47,7 +69,7 @@ function getSimpleMoves(board: Piece[][], pos: Position): Position[] {
     for (const dcol of [-1, 1]) {
       const newRow = pos.row + direction;
       const newCol = pos.col + dcol;
-      if (isOnBoard(newRow, newCol) && board[newRow][newCol] === null) {
+      if (isOnBoard(newRow, newCol, boardSize) && board[newRow][newCol] === null) {
         moves.push({ row: newRow, col: newCol });
       }
     }
@@ -61,7 +83,7 @@ function getSimpleMoves(board: Piece[][], pos: Position): Position[] {
       while (true) {
         const newRow = pos.row + drow * steps;
         const newCol = pos.col + dcol * steps;
-        if (!isOnBoard(newRow, newCol) || board[newRow][newCol] !== null) break;
+        if (!isOnBoard(newRow, newCol, boardSize) || board[newRow][newCol] !== null) break;
         moves.push({ row: newRow, col: newCol });
         steps++;
       }
@@ -71,7 +93,12 @@ function getSimpleMoves(board: Piece[][], pos: Position): Position[] {
   return moves;
 }
 
-function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] = []): Position[] {
+function getCaptureMoves(
+  board: Piece[][],
+  pos: Position,
+  excluded: Position[] = [],
+  boardSize: number
+): Position[] {
   const piece = board[pos.row][pos.col];
   if (!piece) return [];
 
@@ -90,7 +117,7 @@ function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] =
         const midPiece = board[midRow]?.[midCol];
 
         if (
-          isOnBoard(targetRow, targetCol) &&
+          isOnBoard(targetRow, targetCol, boardSize) &&
           midPiece?.color === opponent &&
           !midIsExcluded &&
           board[targetRow][targetCol] === null
@@ -112,7 +139,7 @@ function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] =
       while (true) {
         const r = pos.row + drow * steps;
         const c = pos.col + dcol * steps;
-        if (!isOnBoard(r, c)) break;
+        if (!isOnBoard(r, c, boardSize)) break;
 
         const cellPiece = board[r][c];
         const isExcluded = excluded.some(p => p.row === r && p.col === c);
@@ -127,14 +154,14 @@ function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] =
             steps++;
             continue;
           }
-          break; // saját bábu, vagy kizárt ellenfél-korong -> nem tud átugrani
+          break;
         } else {
           if (cellPiece === null) {
             moves.push({ row: r, col: c });
             steps++;
             continue;
           }
-          break; // a leütendő korong mögött csak üres mezőkre landolhat, itt megáll a szakasz
+          break;
         }
       }
     }
@@ -160,12 +187,17 @@ function findCapturedPosition(board: Piece[][], from: Position, to: Position): P
   return null;
 }
 
-function boardHasAnyCapture(board: Piece[][], player: 'white' | 'black', excluded: Position[] = []): boolean {
-  for (let row = 0; row < BOARD_SIZE; row++) {
-    for (let col = 0; col < BOARD_SIZE; col++) {
+function boardHasAnyCapture(
+  board: Piece[][],
+  player: PieceColor,
+  excluded: Position[] = [],
+  boardSize: number
+): boolean {
+  for (let row = 0; row < boardSize; row++) {
+    for (let col = 0; col < boardSize; col++) {
       if (board[row][col]?.color === player) {
-        if (getCaptureMoves(board, { row, col }, excluded).length > 0) 
-            return true;
+        if (getCaptureMoves(board, { row, col }, excluded, boardSize).length > 0)
+          return true;
       }
     }
   }
@@ -187,87 +219,99 @@ function PieceView({ color, isKing, faded }: { color: PieceColor; isKing: boolea
 }
 
 export default function Board() {
-  const [board, setBoard] = useState<Piece[][]>(createInitialBoard());
-  const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
+  const [variant, setVariant] = useState<Variant>('russian');
+  const rules = variant === 'russian' ? RUSSIAN_RULES : INTERNATIONAL_RULES;
+
+  const [board, setBoard] = useState<Piece[][]>(createInitialBoard(rules.boardSize));
+  const [selected, setSelected] = useState<Position | null>(null);
   const [capturedPositions, setCapturedPositions] = useState<Position[]>([]);
   const [currentPlayer, setCurrentPlayer] = useState<PieceColor>('white');
-  
+
+  function handleVariantChange(newVariant: Variant) {
+    const newRules = newVariant === 'russian' ? RUSSIAN_RULES : INTERNATIONAL_RULES;
+    setVariant(newVariant);
+    setBoard(createInitialBoard(newRules.boardSize));
+    setSelected(null);
+    setCapturedPositions([]);
+    setCurrentPlayer('white');
+  }
+
   function handleCellPress(row: number, col: number) {
-  const piece = board[row][col];
+    const piece = board[row][col];
 
-  if (selected) {
-    const selectedPiece = board[selected.row][selected.col];
-    if (!selectedPiece) {
-      setSelected(null);
-      return;
-    }
-
-    const isChainCapture = capturedPositions.length > 0;
-    const mustCapture = isChainCapture || boardHasAnyCapture(board, selectedPiece.color, capturedPositions);
-    const captureMoves = getCaptureMoves(board, selected, capturedPositions);
-    const simpleMoves = isChainCapture ? [] : getSimpleMoves(board, selected);
-    const legalMoves = mustCapture ? captureMoves : [...simpleMoves, ...captureMoves];
-
-    const isLegal = legalMoves.some(m => m.row === row && m.col === col);
-
-    if (isLegal) {
-      const newBoard = board.map(r => [...r]);
-      
-      const promotedPiece: PieceData = { ...selectedPiece };
-      if (!promotedPiece.isKing) {
-        if (
-          (promotedPiece.color === 'white' && row === 0) ||
-          (promotedPiece.color === 'black' && row === BOARD_SIZE - 1)
-        ) {
-          promotedPiece.isKing = true;
-        }
-      }
-      newBoard[row][col] = promotedPiece;
-
-      newBoard[selected.row][selected.col] = null;
-
-      const capturedPos = findCapturedPosition(board, selected, { row, col });
-      const isCapture = capturedPos !== null;
-      let updatedCaptured = capturedPositions;
-
-      if (isCapture && capturedPos) {
-        updatedCaptured = [...capturedPositions, capturedPos];
-      }
-
-      const furtherCaptures = isCapture
-        ? getCaptureMoves(newBoard, { row, col }, updatedCaptured)
-        : [];
-
-      if (furtherCaptures.length > 0) {
-        // Van még folytatás -> a leütött korongok egyelőre halványan a táblán maradnak
-        setBoard(newBoard);
-        setCapturedPositions(updatedCaptured);
-        setSelected({ row, col });
+    if (selected) {
+      const selectedPiece = board[selected.row][selected.col];
+      if (!selectedPiece) {
+        setSelected(null);
         return;
       }
 
-      // A sorozat véget ért (vagy sima lépés volt) -> most tűnnek el ténylegesen a leütött korongok
-      if (updatedCaptured.length > 0) {
-        for (const pos of updatedCaptured) {
-          newBoard[pos.row][pos.col] = null;
-        }
-      }
+      const isChainCapture = capturedPositions.length > 0;
+      const mustCapture =
+        isChainCapture ||
+        boardHasAnyCapture(board, selectedPiece.color, capturedPositions, rules.boardSize);
+      const captureMoves = getCaptureMoves(board, selected, capturedPositions, rules.boardSize);
+      const simpleMoves = isChainCapture ? [] : getSimpleMoves(board, selected, rules.boardSize);
+      const legalMoves = mustCapture ? captureMoves : [...simpleMoves, ...captureMoves];
 
-      setBoard(newBoard);
-      setCapturedPositions([]);
-      setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
-    }
-        setSelected(null);
+      const isLegal = legalMoves.some(m => m.row === row && m.col === col);
+
+      if (isLegal) {
+        const newBoard = board.map(r => [...r]);
+
+        const promotedPiece: PieceData = { ...selectedPiece };
+        if (!promotedPiece.isKing) {
+          if (
+            (promotedPiece.color === 'white' && row === 0) ||
+            (promotedPiece.color === 'black' && row === rules.boardSize - 1)
+          ) {
+            promotedPiece.isKing = true;
+          }
+        }
+        newBoard[row][col] = promotedPiece;
+
+        newBoard[selected.row][selected.col] = null;
+
+        const capturedPos = findCapturedPosition(board, selected, { row, col });
+        const isCapture = capturedPos !== null;
+        let updatedCaptured = capturedPositions;
+
+        if (isCapture && capturedPos) {
+          updatedCaptured = [...capturedPositions, capturedPos];
+        }
+
+        const furtherCaptures = isCapture
+          ? getCaptureMoves(newBoard, { row, col }, updatedCaptured, rules.boardSize)
+          : [];
+
+        if (furtherCaptures.length > 0) {
+          setBoard(newBoard);
+          setCapturedPositions(updatedCaptured);
+          setSelected({ row, col });
+          return;
+        }
+
+        if (updatedCaptured.length > 0) {
+          for (const pos of updatedCaptured) {
+            newBoard[pos.row][pos.col] = null;
+          }
+        }
+
+        setBoard(newBoard);
+        setCapturedPositions([]);
+        setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
+      }
+      setSelected(null);
     } else if (piece && piece.color === currentPlayer) {
-        setSelected({ row, col });
+      setSelected({ row, col });
     }
   }
-  
+
   const rows = [];
 
-  for (let row = 0; row < BOARD_SIZE; row++) {
+  for (let row = 0; row < rules.boardSize; row++) {
     const cells = [];
-    for (let col = 0; col < BOARD_SIZE; col++) {
+    for (let col = 0; col < rules.boardSize; col++) {
       const isDark = (row + col) % 2 === 1;
       const piece = board[row][col];
       const isSelected = selected?.row === row && selected?.col === col;
@@ -275,15 +319,15 @@ export default function Board() {
 
       cells.push(
         <Pressable
-            key={`${row}-${col}`}
-            onPress={() => handleCellPress(row, col)}
-            style={[
-                styles.cell,
-                isDark ? styles.darkCell : styles.lightCell,
-                isSelected && styles.selectedCell,
-            ]}
+          key={`${row}-${col}`}
+          onPress={() => handleCellPress(row, col)}
+          style={[
+            styles.cell,
+            isDark ? styles.darkCell : styles.lightCell,
+            isSelected && styles.selectedCell,
+          ]}
         >
-        {piece && <PieceView color={piece.color} isKing={piece.isKing} faded={isPendingRemoval} />}
+          {piece && <PieceView color={piece.color} isKing={piece.isKing} faded={isPendingRemoval} />}
         </Pressable>
       );
     }
@@ -296,12 +340,27 @@ export default function Board() {
 
   return (
     <View>
-        <Text style={styles.turnIndicator}>
-            Soron: {currentPlayer === 'white' ? 'Fehér' : 'Fekete'}
-        </Text>
-        <View style={styles.board}>{rows}</View>
+      <View style={styles.variantSwitcher}>
+        <Pressable
+          onPress={() => handleVariantChange('russian')}
+          style={[styles.variantButton, variant === 'russian' && styles.variantButtonActive]}
+        >
+          <Text style={styles.variantButtonText}>Orosz dáma</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => handleVariantChange('international')}
+          style={[styles.variantButton, variant === 'international' && styles.variantButtonActive]}
+        >
+          <Text style={styles.variantButtonText}>Nemzetközi dáma</Text>
+        </Pressable>
+      </View>
+
+      <Text style={styles.turnIndicator}>
+        Soron: {currentPlayer === 'white' ? 'Fehér' : 'Fekete'}
+      </Text>
+      <View style={styles.board}>{rows}</View>
     </View>
-);
+  );
 }
 
 const styles = StyleSheet.create({
@@ -313,13 +372,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   cell: {
-  width: 40,
-  height: 40,
-  alignItems: 'center',
-  justifyContent: 'center',
-},
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   darkCell: {
-    backgroundColor: '#769656',//Zöldes: 769656
+    backgroundColor: '#769656',
   },
   lightCell: {
     backgroundColor: '#eeeed2',
@@ -340,22 +399,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#2b2b2b',
   },
   fadedPiece: {
-  opacity: 0.35,
+    opacity: 0.35,
   },
   kingRing: {
-  width: 14,
-  height: 14,
-  borderRadius: 7,
-  borderWidth: 2,
-  borderColor: '#ffcc00',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#ffcc00',
   },
   selectedCell: {
     borderWidth: 3,
     borderColor: '#ffcc00',
   },
   turnIndicator: {
-  fontSize: 16,
-  marginBottom: 8,
-  textAlign: 'center',
+    fontSize: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  variantSwitcher: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  variantButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#769656',
+  },
+  variantButtonActive: {
+    backgroundColor: '#769656',
+  },
+  variantButtonText: {
+    fontSize: 13,
   },
 });
