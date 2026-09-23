@@ -27,6 +27,68 @@ function createInitialBoard(): Piece[][] {
   return board;
 }
 
+type Position = { row: number; col: number };
+
+function isOnBoard(row: number, col: number): boolean {
+  return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+}
+
+function getSimpleMoves(board: Piece[][], pos: Position): Position[] {
+  const piece = board[pos.row][pos.col];
+  if (!piece) return [];
+
+  const direction = piece === 'white' ? -1 : 1;
+  const moves: Position[] = [];
+
+  for (const dcol of [-1, 1]) {
+    const newRow = pos.row + direction;
+    const newCol = pos.col + dcol;
+    if (isOnBoard(newRow, newCol) && board[newRow][newCol] === null) {
+      moves.push({ row: newRow, col: newCol });
+    }
+  }
+
+  return moves;
+}
+
+function getCaptureMoves(board: Piece[][], pos: Position): Position[] {
+  const piece = board[pos.row][pos.col];
+  if (!piece) return [];
+
+  const opponent = piece === 'white' ? 'black' : 'white';
+  const moves: Position[] = [];
+
+  for (const drow of [-1, 1]) {
+    for (const dcol of [-1, 1]) {
+      const midRow = pos.row + drow;
+      const midCol = pos.col + dcol;
+      const targetRow = pos.row + drow * 2;
+      const targetCol = pos.col + dcol * 2;
+
+      if (
+        isOnBoard(targetRow, targetCol) &&
+        board[midRow]?.[midCol] === opponent &&
+        board[targetRow][targetCol] === null
+      ) {
+        moves.push({ row: targetRow, col: targetCol });
+      }
+    }
+  }
+
+  return moves;
+}
+
+function boardHasAnyCapture(board: Piece[][], player: 'white' | 'black'): boolean {
+  for (let row = 0; row < BOARD_SIZE; row++) {
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      if (board[row][col] === player) {
+        if (getCaptureMoves(board, { row, col }).length > 0) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function PieceView({ color }: { color: 'white' | 'black' }) {
   return (
     <View
@@ -43,20 +105,38 @@ export default function Board() {
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
   
   function handleCellPress(row: number, col: number) {
-    const piece = board[row][col];
+  const piece = board[row][col];
 
-    if (selected) {
-    // Ha már ki van választva egy korong, és most egy üres mezőre koppintasz -> lépés
-        const targetIsEmpty = board[row][col] === null;
-    if (targetIsEmpty) {
-        const newBoard = board.map(r => [...r]);
-        newBoard[row][col] = newBoard[selected.row][selected.col];
-        newBoard[selected.row][selected.col] = null;
-        setBoard(newBoard);
+  if (selected) {
+    const selectedPiece = board[selected.row][selected.col];
+    if (!selectedPiece) {
+      setSelected(null);
+      return;
     }
-    setSelected(null);
+
+    const mustCapture = boardHasAnyCapture(board, selectedPiece);
+    const captureMoves = getCaptureMoves(board, selected);
+    const simpleMoves = getSimpleMoves(board, selected);
+    const legalMoves = mustCapture ? captureMoves : [...simpleMoves, ...captureMoves];
+
+    const isLegal = legalMoves.some(m => m.row === row && m.col === col);
+
+    if (isLegal) {
+      const newBoard = board.map(r => [...r]);
+      newBoard[row][col] = selectedPiece;
+      newBoard[selected.row][selected.col] = null;
+
+      const isCapture = Math.abs(row - selected.row) === 2;
+      if (isCapture) {
+        const midRow = (row + selected.row) / 2;
+        const midCol = (col + selected.col) / 2;
+        newBoard[midRow][midCol] = null;
+      }
+
+      setBoard(newBoard);
+    }
+        setSelected(null);
     } else if (piece) {
-    // Ha még nincs kiválasztva semmi, és van korong ezen a mezőn -> kiválasztás
         setSelected({ row, col });
     }
   }
