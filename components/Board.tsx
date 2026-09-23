@@ -51,7 +51,7 @@ function getSimpleMoves(board: Piece[][], pos: Position): Position[] {
   return moves;
 }
 
-function getCaptureMoves(board: Piece[][], pos: Position): Position[] {
+function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] = []): Position[] {
   const piece = board[pos.row][pos.col];
   if (!piece) return [];
 
@@ -65,9 +65,12 @@ function getCaptureMoves(board: Piece[][], pos: Position): Position[] {
       const targetRow = pos.row + drow * 2;
       const targetCol = pos.col + dcol * 2;
 
+      const midIsExcluded = excluded.some(p => p.row === midRow && p.col === midCol);
+
       if (
         isOnBoard(targetRow, targetCol) &&
         board[midRow]?.[midCol] === opponent &&
+        !midIsExcluded &&
         board[targetRow][targetCol] === null
       ) {
         moves.push({ row: targetRow, col: targetCol });
@@ -78,23 +81,25 @@ function getCaptureMoves(board: Piece[][], pos: Position): Position[] {
   return moves;
 }
 
-function boardHasAnyCapture(board: Piece[][], player: 'white' | 'black'): boolean {
+function boardHasAnyCapture(board: Piece[][], player: 'white' | 'black', excluded: Position[] = []): boolean {
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
       if (board[row][col] === player) {
-        if (getCaptureMoves(board, { row, col }).length > 0) return true;
+        if (getCaptureMoves(board, { row, col }, excluded).length > 0) 
+            return true;
       }
     }
   }
   return false;
 }
 
-function PieceView({ color }: { color: 'white' | 'black' }) {
+function PieceView({ color, faded }: { color: 'white' | 'black'; faded?: boolean }) {
   return (
     <View
       style={[
         styles.piece,
         color === 'white' ? styles.whitePiece : styles.blackPiece,
+        faded && styles.fadedPiece,
       ]}
     />
   );
@@ -103,6 +108,7 @@ function PieceView({ color }: { color: 'white' | 'black' }) {
 export default function Board() {
   const [board, setBoard] = useState<Piece[][]>(createInitialBoard());
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
+  const [capturedPositions, setCapturedPositions] = useState<Position[]>([]);
   
   function handleCellPress(row: number, col: number) {
   const piece = board[row][col];
@@ -114,9 +120,10 @@ export default function Board() {
       return;
     }
 
-    const mustCapture = boardHasAnyCapture(board, selectedPiece);
-    const captureMoves = getCaptureMoves(board, selected);
-    const simpleMoves = getSimpleMoves(board, selected);
+    const isChainCapture = capturedPositions.length > 0;
+    const mustCapture = isChainCapture || boardHasAnyCapture(board, selectedPiece, capturedPositions);
+    const captureMoves = getCaptureMoves(board, selected, capturedPositions);
+    const simpleMoves = isChainCapture ? [] : getSimpleMoves(board, selected);
     const legalMoves = mustCapture ? captureMoves : [...simpleMoves, ...captureMoves];
 
     const isLegal = legalMoves.some(m => m.row === row && m.col === col);
@@ -127,13 +134,35 @@ export default function Board() {
       newBoard[selected.row][selected.col] = null;
 
       const isCapture = Math.abs(row - selected.row) === 2;
+      let updatedCaptured = capturedPositions;
+
       if (isCapture) {
         const midRow = (row + selected.row) / 2;
         const midCol = (col + selected.col) / 2;
-        newBoard[midRow][midCol] = null;
+        updatedCaptured = [...capturedPositions, { row: midRow, col: midCol }];
+      }
+
+      const furtherCaptures = isCapture
+        ? getCaptureMoves(newBoard, { row, col }, updatedCaptured)
+        : [];
+
+      if (furtherCaptures.length > 0) {
+        // Van még folytatás -> a leütött korongok egyelőre halványan a táblán maradnak
+        setBoard(newBoard);
+        setCapturedPositions(updatedCaptured);
+        setSelected({ row, col });
+        return;
+      }
+
+      // A sorozat véget ért (vagy sima lépés volt) -> most tűnnek el ténylegesen a leütött korongok
+      if (updatedCaptured.length > 0) {
+        for (const pos of updatedCaptured) {
+          newBoard[pos.row][pos.col] = null;
+        }
       }
 
       setBoard(newBoard);
+      setCapturedPositions([]);
     }
         setSelected(null);
     } else if (piece) {
@@ -148,8 +177,8 @@ export default function Board() {
     for (let col = 0; col < BOARD_SIZE; col++) {
       const isDark = (row + col) % 2 === 1;
       const piece = board[row][col];
-
       const isSelected = selected?.row === row && selected?.col === col;
+      const isPendingRemoval = capturedPositions.some(p => p.row === row && p.col === col);
 
       cells.push(
         <Pressable
@@ -161,7 +190,7 @@ export default function Board() {
                 isSelected && styles.selectedCell,
             ]}
         >
-        {piece && <PieceView color={piece} />}
+        {piece && <PieceView color={piece} faded={isPendingRemoval} />}
         </Pressable>
       );
     }
@@ -207,6 +236,9 @@ const styles = StyleSheet.create({
   },
   blackPiece: {
     backgroundColor: '#2b2b2b',
+  },
+  fadedPiece: {
+  opacity: 0.35,
   },
   selectedCell: {
     borderWidth: 3,
