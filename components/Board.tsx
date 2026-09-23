@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, Pressable } from 'react-native';
 
 const BOARD_SIZE = 8;
 type Piece = 'white' | 'black' | null;
@@ -39,7 +39,28 @@ function PieceView({ color }: { color: 'white' | 'black' }) {
 }
 
 export default function Board() {
-  const board = createInitialBoard();
+  const [board, setBoard] = useState<Piece[][]>(createInitialBoard());
+  const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
+  
+  function handleCellPress(row: number, col: number) {
+    const piece = board[row][col];
+
+    if (selected) {
+    // Ha már ki van választva egy korong, és most egy üres mezőre koppintasz -> lépés
+        const targetIsEmpty = board[row][col] === null;
+    if (targetIsEmpty) {
+        const newBoard = board.map(r => [...r]);
+        newBoard[row][col] = newBoard[selected.row][selected.col];
+        newBoard[selected.row][selected.col] = null;
+        setBoard(newBoard);
+    }
+    setSelected(null);
+    } else if (piece) {
+    // Ha még nincs kiválasztva semmi, és van korong ezen a mezőn -> kiválasztás
+        setSelected({ row, col });
+    }
+  }
+  
   const rows = [];
 
   for (let row = 0; row < BOARD_SIZE; row++) {
@@ -48,13 +69,20 @@ export default function Board() {
       const isDark = (row + col) % 2 === 1;
       const piece = board[row][col];
 
+      const isSelected = selected?.row === row && selected?.col === col;
+
       cells.push(
-        <View
-          key={`${row}-${col}`}
-          style={[styles.cell, isDark ? styles.darkCell : styles.lightCell]}
+        <Pressable
+            key={`${row}-${col}`}
+            onPress={() => handleCellPress(row, col)}
+            style={[
+                styles.cell,
+                isDark ? styles.darkCell : styles.lightCell,
+                isSelected && styles.selectedCell,
+            ]}
         >
-          {piece && <PieceView color={piece} />}
-        </View>
+        {piece && <PieceView color={piece} />}
+        </Pressable>
       );
     }
     rows.push(
@@ -99,5 +127,9 @@ const styles = StyleSheet.create({
   },
   blackPiece: {
     backgroundColor: '#2b2b2b',
+  },
+  selectedCell: {
+    borderWidth: 3,
+    borderColor: '#ffcc00',
   },
 });
