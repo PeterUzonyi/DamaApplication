@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet, Pressable, Text } from 'react-native';
+
 
 const BOARD_SIZE = 8;
 type PieceColor = 'white' | 'black';
@@ -189,6 +190,7 @@ export default function Board() {
   const [board, setBoard] = useState<Piece[][]>(createInitialBoard());
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
   const [capturedPositions, setCapturedPositions] = useState<Position[]>([]);
+  const [currentPlayer, setCurrentPlayer] = useState<PieceColor>('white');
   
   function handleCellPress(row: number, col: number) {
   const piece = board[row][col];
@@ -253,9 +255,10 @@ export default function Board() {
 
       setBoard(newBoard);
       setCapturedPositions([]);
+      setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
     }
         setSelected(null);
-    } else if (piece) {
+    } else if (piece && piece.color === currentPlayer) {
         setSelected({ row, col });
     }
   }
@@ -291,7 +294,14 @@ export default function Board() {
     );
   }
 
-  return <View style={styles.board}>{rows}</View>;
+  return (
+    <View>
+        <Text style={styles.turnIndicator}>
+            Soron: {currentPlayer === 'white' ? 'Fehér' : 'Fekete'}
+        </Text>
+        <View style={styles.board}>{rows}</View>
+    </View>
+);
 }
 
 const styles = StyleSheet.create({
@@ -342,5 +352,10 @@ const styles = StyleSheet.create({
   selectedCell: {
     borderWidth: 3,
     borderColor: '#ffcc00',
+  },
+  turnIndicator: {
+  fontSize: 16,
+  marginBottom: 8,
+  textAlign: 'center',
   },
 });
