@@ -98,9 +98,9 @@ function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] =
   if (!piece) return [];
 
   const opponent = piece.color === 'white' ? 'black' : 'white';
-  const moves: Position[] = [];
 
   if (!piece.isKing) {
+    const moves: Position[] = [];
     for (const drow of [-1, 1]) {
       for (const dcol of [-1, 1]) {
         const midRow = pos.row + drow;
@@ -124,12 +124,14 @@ function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] =
     return moves;
   }
 
-  // Király ütése: végigmegy az átlón, amíg üres mezőket talál,
-  // ha ellenfél-korongba ütközik (és nincs kizárva), a mögötte lévő üres mezőkre tud landolni
+  // Király: irányonként (leütött korongonként) KÜLÖN gyűjtjük és szűrjük a landolási helyeket
+  const allowedMoves: Position[] = [];
+
   for (const drow of [-1, 1]) {
     for (const dcol of [-1, 1]) {
       let steps = 1;
       let foundOpponent: Position | null = null;
+      const directionCandidates: Position[] = [];
 
       while (true) {
         const r = pos.row + drow * steps;
@@ -152,17 +154,33 @@ function getCaptureMoves(board: Piece[][], pos: Position, excluded: Position[] =
           break;
         } else {
           if (cellPiece === null) {
-            moves.push({ row: r, col: c });
+            directionCandidates.push({ row: r, col: c });
             steps++;
             continue;
           }
           break;
         }
       }
+
+      if (directionCandidates.length === 0) continue;
+
+      // Ezen az EGY irányon (ugyanazon leütött korongon) belül szűrünk: van-e folytatás
+      const withContinuation = directionCandidates.filter(candidate => {
+        const capturedPos = findCapturedPosition(board, pos, candidate);
+        if (!capturedPos) return false;
+        const simulatedBoard = simulateMove(board, pos, candidate);
+        const newExcluded = [...excluded, capturedPos];
+        return getCaptureMoves(simulatedBoard, candidate, newExcluded, boardSize).length > 0;
+      });
+
+      const finalForThisDirection =
+        withContinuation.length > 0 ? withContinuation : directionCandidates;
+
+      allowedMoves.push(...finalForThisDirection);
     }
   }
 
-  return moves;
+  return allowedMoves;
 }
 
 function simulateMove(board: Piece[][], from: Position, to: Position): Piece[][] {
@@ -394,7 +412,9 @@ export default function Board() {
         setCapturedPositions([]);
         setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
       }
-      setSelected(null);
+      if (!isChainCapture || isLegal) {
+        setSelected(null);
+      }
     } else if (piece && piece.color === currentPlayer) {
       setSelected({ row, col });
     }
@@ -458,14 +478,19 @@ export default function Board() {
 
 // IDEIGLENES TESZT FÜGGVÉNY - a késleltetett promóció teszteléséhez, utána törölhető
 function createPromotionTestBoard(): Piece[][] {
-  const boardSize = 10;
+  const boardSize = 8;
   const board: Piece[][] = Array.from({ length: boardSize }, () =>
     Array(boardSize).fill(null)
   );
 
-  board[2][3] = { color: 'white', isKing: false };
-  board[1][4] = { color: 'black', isKing: false };
+  board[2][7] = { color: 'white', isKing: false };
+  board[0][1] = { color: 'white', isKing: true };
+  board[2][3] = { color: 'black', isKing: false };
+  //board[7][6] = { color: 'black', isKing: false };
   board[1][6] = { color: 'black', isKing: false };
+  board[5][4] = { color: 'black', isKing: false };
+  board[4][1] = { color: 'black', isKing: false };
+  board[6][1] = { color: 'black', isKing: false };
 
   return board;
 }
