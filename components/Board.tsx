@@ -229,11 +229,7 @@ function getMaxCaptureMoves(board: Piece[][], pos: Position, excluded: Position[
     .map(seq => seq[0]);
 }
 
-function getMandatoryMaxCaptureFirstSteps(
-  board: Piece[][],
-  player: PieceColor,
-  boardSize: number
-): Position[] {
+function getMandatoryMaxCaptureFirstSteps(board: Piece[][], player: PieceColor, boardSize: number): Position[] {
   let maxLength = 0;
   const firstStepsByPosition: { from: Position; to: Position; length: number }[] = [];
 
@@ -258,12 +254,7 @@ function getMandatoryMaxCaptureFirstSteps(
     .map(s => s.to);
 }
 
-function boardHasAnyCapture(
-  board: Piece[][],
-  player: PieceColor,
-  excluded: Position[] = [],
-  boardSize: number
-): boolean {
+function boardHasAnyCapture(board: Piece[][], player: PieceColor, excluded: Position[] = [], boardSize: number): boolean {
   for (let row = 0; row < boardSize; row++) {
     for (let col = 0; col < boardSize; col++) {
       if (board[row][col]?.color === player) {
@@ -291,9 +282,11 @@ function PieceView({ color, isKing, faded }: { color: PieceColor; isKing: boolea
 
 export default function Board() {
   const [variant, setVariant] = useState<Variant>('russian');
+  //const [variant, setVariant] = useState<Variant>('international'); //Ne változzon dámává teszt
   const rules = variant === 'russian' ? RUSSIAN_RULES : INTERNATIONAL_RULES;
 
   const [board, setBoard] = useState<Piece[][]>(createInitialBoard(rules.boardSize));
+  //const [board, setBoard] = useState<Piece[][]>(createPromotionTestBoard()); //Ne változzon dámává teszt
   const [selected, setSelected] = useState<Position | null>(null);
   const [capturedPositions, setCapturedPositions] = useState<Position[]>([]);
   const [currentPlayer, setCurrentPlayer] = useState<PieceColor>('white');
@@ -345,18 +338,9 @@ export default function Board() {
       if (isLegal) {
         const newBoard = board.map(r => [...r]);
 
-        const promotedPiece: PieceData = { ...selectedPiece };
-        if (!promotedPiece.isKing) {
-          if (
-            (promotedPiece.color === 'white' && row === 0) ||
-            (promotedPiece.color === 'black' && row === rules.boardSize - 1)
-          ) {
-            promotedPiece.isKing = true;
-          }
-        }
-        newBoard[row][col] = promotedPiece;
-
-        newBoard[selected.row][selected.col] = null;
+        const reachedLastRow =
+        (selectedPiece.color === 'white' && row === 0) ||
+        (selectedPiece.color === 'black' && row === rules.boardSize - 1);
 
         const capturedPos = findCapturedPosition(board, selected, { row, col });
         const isCapture = capturedPos !== null;
@@ -366,9 +350,32 @@ export default function Board() {
           updatedCaptured = [...capturedPositions, capturedPos];
         }
 
-        const furtherCaptures = isCapture
-          ? getCaptureMoves(newBoard, { row, col }, updatedCaptured, rules.boardSize)
-          : [];
+        // Először NEM promotáljuk a bábut, hanem "korongként" nézzük meg, van-e még folytatás
+        const tentativePiece: PieceData = { ...selectedPiece };
+        newBoard[row][col] = tentativePiece;
+        newBoard[selected.row][selected.col] = null;
+
+        const furtherCapturesAsMan = isCapture
+        ? getCaptureMoves(newBoard, { row, col }, updatedCaptured, rules.boardSize)
+        : [];
+
+        let furtherCaptures = furtherCapturesAsMan;
+
+        if (!tentativePiece.isKing && reachedLastRow) {
+          if (rules.promotionDuringCaptureRequiresStop) {
+            // Nemzetközi: csak akkor válik dámává, ha NINCS további korongként ütés
+            if (furtherCapturesAsMan.length === 0) {
+              tentativePiece.isKing = true;
+            }
+            // ha van további ütés, korongként marad, és korongként folytatjuk (furtherCaptures már ez)
+          } else {
+            // Orosz: azonnal dámává válik, és onnantól királyként keresünk folytatást
+            tentativePiece.isKing = true;
+            furtherCaptures = isCapture
+            ? getCaptureMoves(newBoard, { row, col }, updatedCaptured, rules.boardSize)
+            : [];
+          }
+        }
 
         if (furtherCaptures.length > 0) {
           setBoard(newBoard);
@@ -447,6 +454,20 @@ export default function Board() {
       <View style={styles.board}>{rows}</View>
     </View>
   );
+}
+
+// IDEIGLENES TESZT FÜGGVÉNY - a késleltetett promóció teszteléséhez, utána törölhető
+function createPromotionTestBoard(): Piece[][] {
+  const boardSize = 10;
+  const board: Piece[][] = Array.from({ length: boardSize }, () =>
+    Array(boardSize).fill(null)
+  );
+
+  board[2][3] = { color: 'white', isKing: false };
+  board[1][4] = { color: 'black', isKing: false };
+  board[1][6] = { color: 'black', isKing: false };
+
+  return board;
 }
 
 const styles = StyleSheet.create({
