@@ -1,50 +1,58 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
+import { Piece, PieceColor, Position } from '../logic/engine';
 
-type PieceColor = 'white' | 'black';
-type PieceData = { color: PieceColor; isKing: boolean };
-type Piece = PieceData | null;
+type Props = {
+  board: Piece[][];
+  boardSize: number;
+  selected?: Position | null;
+  capturedPositions?: Position[];
+  onCellPress?: (row: number, col: number) => void;
+};
 
-export function parseBoardFromRows(rows: string[]): Piece[][] {
-  return rows.map(rowStr =>
-    rowStr.split('').map(char => {
-      switch (char) {
-        case 'w':
-          return { color: 'white', isKing: false } as PieceData;
-        case 'W':
-          return { color: 'white', isKing: true } as PieceData;
-        case 'b':
-          return { color: 'black', isKing: false } as PieceData;
-        case 'B':
-          return { color: 'black', isKing: true } as PieceData;
-        default:
-          return null;
-      }
-    })
-  );
-}
-
-function PieceView({ color, isKing }: { color: PieceColor; isKing: boolean }) {
+function PieceView({ color, isKing, faded }: { color: PieceColor; isKing: boolean; faded?: boolean }) {
   return (
-    <View style={[styles.piece, color === 'white' ? styles.whitePiece : styles.blackPiece]}>
+    <View
+      style={[
+        styles.piece,
+        color === 'white' ? styles.whitePiece : styles.blackPiece,
+        faded && styles.fadedPiece,
+      ]}
+    >
       {isKing && <View style={styles.kingRing} />}
     </View>
   );
 }
 
-export default function PuzzleBoard({ board, boardSize }: { board: Piece[][]; boardSize: number }) {
+export default function PuzzleBoard({
+  board,
+  boardSize,
+  selected = null,
+  capturedPositions = [],
+  onCellPress,
+}: Props) {
   const rows = [];
 
   for (let row = 0; row < boardSize; row++) {
     const cells = [];
     for (let col = 0; col < boardSize; col++) {
       const isDark = (row + col) % 2 === 1;
-      const piece = board[row][col];
+      const piece = board[row]?.[col] ?? null;
+      const isSelected = selected?.row === row && selected?.col === col;
+      const isPendingRemoval = capturedPositions.some(p => p.row === row && p.col === col);
 
       cells.push(
-        <View key={`${row}-${col}`} style={[styles.cell, isDark ? styles.darkCell : styles.lightCell]}>
-          {piece && <PieceView color={piece.color} isKing={piece.isKing} />}
-        </View>
+        <Pressable
+          key={`${row}-${col}`}
+          onPress={() => onCellPress?.(row, col)}
+          style={[
+            styles.cell,
+            isDark ? styles.darkCell : styles.lightCell,
+            isSelected && styles.selectedCell,
+          ]}
+        >
+          {piece && <PieceView color={piece.color} isKing={piece.isKing} faded={isPendingRemoval} />}
+        </Pressable>
       );
     }
     rows.push(
@@ -77,6 +85,10 @@ const styles = StyleSheet.create({
   lightCell: {
     backgroundColor: '#eeeed2',
   },
+  selectedCell: {
+    borderWidth: 3,
+    borderColor: '#ffcc00',
+  },
   piece: {
     width: 26,
     height: 26,
@@ -91,6 +103,9 @@ const styles = StyleSheet.create({
   },
   blackPiece: {
     backgroundColor: '#2b2b2b',
+  },
+  fadedPiece: {
+    opacity: 0.35,
   },
   kingRing: {
     width: 12,

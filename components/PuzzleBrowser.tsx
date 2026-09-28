@@ -1,23 +1,30 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import PuzzleBoard, { parseBoardFromRows } from './PuzzleBoard';
-import russianPuzzles from '../data/puzzles/russian_test.json';
-import internationalPuzzles from '../data/puzzles/international_test.json';
+import PuzzleSolver from './PuzzleSolver';
+import {
+  INTERNATIONAL_RULES,
+  Puzzle,
+  RUSSIAN_RULES,
+  Variant,
+} from '../logic/engine';
+import russianPuzzlesData from '../data/puzzles/russian_test.json';
+import internationalPuzzlesData from '../data/puzzles/international_test.json';
 
-type Variant = 'russian' | 'international';
+const russianPuzzles = russianPuzzlesData as Puzzle[];
+const internationalPuzzles = internationalPuzzlesData as Puzzle[];
 
 export default function PuzzleBrowser() {
   const [variant, setVariant] = useState<Variant>('russian');
+  // Mindkét variáns aktuális feladványának sorszámát külön tároljuk, így váltáskor megmarad
   const [indices, setIndices] = useState<{ russian: number; international: number }>({
     russian: 0,
     international: 0,
   });
 
   const puzzleSet = variant === 'russian' ? russianPuzzles : internationalPuzzles;
-  const boardSize = variant === 'russian' ? 8 : 10;
+  const rules = variant === 'russian' ? RUSSIAN_RULES : INTERNATIONAL_RULES;
   const currentIndex = indices[variant];
   const currentPuzzle = puzzleSet[currentIndex];
-  const board = parseBoardFromRows(currentPuzzle.board);
 
   function handleNext() {
     setIndices(prev => ({
@@ -26,22 +33,17 @@ export default function PuzzleBrowser() {
     }));
   }
 
-  function handleVariantChange(newVariant: Variant) {
-    setVariant(newVariant);
-    // Az indices state változatlan marad -> a másik variánsnál is ott folytatódik, ahol abbahagytuk
-  }
-
   return (
-    <View>
+    <View style={styles.container}>
       <View style={styles.variantSwitcher}>
         <Pressable
-          onPress={() => handleVariantChange('russian')}
+          onPress={() => setVariant('russian')}
           style={[styles.variantButton, variant === 'russian' && styles.variantButtonActive]}
         >
           <Text style={styles.variantButtonText}>Orosz dáma</Text>
         </Pressable>
         <Pressable
-          onPress={() => handleVariantChange('international')}
+          onPress={() => setVariant('international')}
           style={[styles.variantButton, variant === 'international' && styles.variantButtonActive]}
         >
           <Text style={styles.variantButtonText}>Nemzetközi dáma</Text>
@@ -52,16 +54,21 @@ export default function PuzzleBrowser() {
         Feladvány {currentIndex + 1} / {puzzleSet.length} ({currentPuzzle.id})
       </Text>
 
-      <PuzzleBoard board={board} boardSize={boardSize} />
-
-      <Pressable style={styles.nextButton} onPress={handleNext}>
-        <Text style={styles.nextButtonText}>Következő</Text>
-      </Pressable>
+      {/* A key miatt módváltásnál és feladványváltásnál a megoldás nulláról indul */}
+      <PuzzleSolver
+        key={`${variant}-${currentPuzzle.id}`}
+        puzzle={currentPuzzle}
+        rules={rules}
+        onNext={handleNext}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+  },
   variantSwitcher: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -85,17 +92,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
     fontSize: 14,
-  },
-  nextButton: {
-    marginTop: 12,
-    alignSelf: 'center',
-    backgroundColor: '#769656',
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  nextButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
   },
 });
