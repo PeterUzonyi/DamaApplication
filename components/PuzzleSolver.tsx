@@ -15,11 +15,12 @@ type Props = {
   puzzle: Puzzle;
   rules: RuleSet;
   onNext: () => void;
+  onSolved?: () => void;
 };
 
 // FONTOS: a szülő `key`-jel hozza létre ezt a komponenst (variáns + feladvány azonosító),
 // ezért feladványváltáskor vagy módváltáskor mindig tiszta, "még el sem kezdett" állapotból indul.
-export default function PuzzleSolver({ puzzle, rules, onNext }: Props) {
+export default function PuzzleSolver({ puzzle, rules, onNext, onSolved }: Props) {
   const solution = useMemo(() => parseSolution(puzzle, rules), [puzzle, rules]);
   const validationError = useMemo(() => validatePuzzle(puzzle, rules), [puzzle, rules]);
   const ctx = useMemo(() => ({ solution: solution ?? [], rules }), [solution, rules]);
@@ -34,6 +35,14 @@ export default function PuzzleSolver({ puzzle, rules, onNext }: Props) {
     }, 600);
     return () => clearTimeout(timer);
   }, [session.phase, session.moveIndex, ctx]);
+
+  // A megoldás pillanatában (csak egyszer, feladványonként) jelezzük a szülőnek
+  useEffect(() => {
+    if (session.phase === 'solved') {
+      onSolved?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.phase]);
 
   function handleCellPress(row: number, col: number) {
     setSession(s => handleClick(s, { row, col }, ctx));

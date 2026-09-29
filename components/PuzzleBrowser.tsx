@@ -1,37 +1,60 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import PuzzleSolver from './PuzzleSolver';
+import LevelPath from './LevelPath';
+import PuzzleDots from './PuzzleDots';
+import { INTERNATIONAL_RULES, RUSSIAN_RULES, Variant } from '../logic/engine';
+import { RUSSIAN_LEVELS, INTERNATIONAL_LEVELS } from '../logic/levelsData';
 import {
-  INTERNATIONAL_RULES,
-  Puzzle,
-  RUSSIAN_RULES,
-  Variant,
-} from '../logic/engine';
-import russianPuzzlesData from '../data/puzzles/russian_test.json';
-import internationalPuzzlesData from '../data/puzzles/international_test.json';
-
-const russianPuzzles = russianPuzzlesData as Puzzle[];
-const internationalPuzzles = internationalPuzzlesData as Puzzle[];
+  INITIAL_PROGRESS,
+  VariantProgress,
+  goToNext,
+  goToNextLevel,
+  markSolved,
+  puzzleKey,
+  selectLevel,
+  selectPuzzle,
+} from '../logic/progress';
 
 export default function PuzzleBrowser() {
   const [variant, setVariant] = useState<Variant>('russian');
-  // Mindkét variáns aktuális feladványának sorszámát külön tároljuk, így váltáskor megmarad
-  const [indices, setIndices] = useState<{ russian: number; international: number }>({
-    russian: 0,
-    international: 0,
+  // Mindkét variáns saját haladását külön tároljuk, így váltáskor megmarad
+  const [progress, setProgress] = useState<{ russian: VariantProgress; international: VariantProgress }>({
+    russian: INITIAL_PROGRESS,
+    international: INITIAL_PROGRESS,
   });
 
-  const puzzleSet = variant === 'russian' ? russianPuzzles : internationalPuzzles;
+  const levels = variant === 'russian' ? RUSSIAN_LEVELS : INTERNATIONAL_LEVELS;
   const rules = variant === 'russian' ? RUSSIAN_RULES : INTERNATIONAL_RULES;
-  const currentIndex = indices[variant];
-  const currentPuzzle = puzzleSet[currentIndex];
+  const current = progress[variant];
+  const level = levels[current.levelIndex];
+  const puzzle = level.puzzles[current.puzzleIndex];
+
+  function update(fn: (p: VariantProgress) => VariantProgress) {
+    setProgress(prev => ({ ...prev, [variant]: fn(prev[variant]) }));
+  }
+
+  function handleSolved() {
+    update(p => markSolved(p, puzzleKey(level, puzzle)));
+  }
 
   function handleNext() {
-    setIndices(prev => ({
-      ...prev,
-      [variant]: (prev[variant] + 1) % puzzleSet.length,
-    }));
+    update(p => goToNext(markSolved(p, puzzleKey(level, puzzle)), levels));
   }
+
+  function handleSelectLevel(index: number) {
+    update(p => selectLevel(p, levels, index));
+  }
+
+  function handleSelectPuzzle(index: number) {
+    update(p => selectPuzzle(p, index));
+  }
+
+  function handleNextLevel() {
+    update(p => goToNextLevel(p, levels));
+  }
+
+  const isLastLevel = current.levelIndex === levels.length - 1;
 
   return (
     <View style={styles.container}>
@@ -50,17 +73,49 @@ export default function PuzzleBrowser() {
         </Pressable>
       </View>
 
-      <Text style={styles.counter}>
-        Feladvány {currentIndex + 1} / {puzzleSet.length} ({currentPuzzle.id})
-      </Text>
-
-      {/* A key miatt módváltásnál és feladványváltásnál a megoldás nulláról indul */}
-      <PuzzleSolver
-        key={`${variant}-${currentPuzzle.id}`}
-        puzzle={currentPuzzle}
-        rules={rules}
-        onNext={handleNext}
+      <LevelPath
+        levels={levels}
+        currentLevelIndex={current.levelIndex}
+        completed={current.completed}
+        onSelectLevel={handleSelectLevel}
       />
+
+      {current.screen === 'levelComplete' ? (
+        <View style={styles.completeBox}>
+          <Text style={styles.completeTitle}>🎉 {level.title} kész!</Text>
+          <Text style={styles.completeText}>
+            Az összes feladványt megoldottad ezen a szinten.
+          </Text>
+          {isLastLevel ? (
+            <Text style={styles.completeText}>Ez volt az utolsó elérhető szint egyelőre.</Text>
+          ) : (
+            <Pressable style={styles.primaryButton} onPress={handleNextLevel}>
+              <Text style={styles.primaryButtonText}>Következő szint</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        <>
+          <PuzzleDots
+            level={level}
+            currentIndex={current.puzzleIndex}
+            completed={current.completed}
+            onSelect={handleSelectPuzzle}
+          />
+          <Text style={styles.counter}>
+            {level.title} – {current.puzzleIndex + 1}. / {level.puzzles.length} ({puzzle.id})
+          </Text>
+
+          {/* A key miatt feladvány- vagy módváltáskor mindig tiszta állapotból indul a megoldás */}
+          <PuzzleSolver
+            key={`${variant}-${level.id}-${puzzle.id}`}
+            puzzle={puzzle}
+            rules={rules}
+            onNext={handleNext}
+            onSolved={handleSolved}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -72,7 +127,7 @@ const styles = StyleSheet.create({
   variantSwitcher: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
     gap: 8,
   },
   variantButton: {
@@ -92,5 +147,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
     fontSize: 14,
+  },
+  completeBox: {
+    alignItems: 'center',
+    padding: 20,
+    gap: 8,
+  },
+  completeTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  completeText: {
+    fontSize: 14,
+    textAlign: 'center',
+    color: '#333',
+  },
+  primaryButton: {
+    marginTop: 10,
+    backgroundColor: '#769656',
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  primaryButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
