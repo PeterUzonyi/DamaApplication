@@ -1,21 +1,21 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { Level } from '../logic/progress';
+import { Level, VariantProgress } from '../logic/progress';
 import { isLevelComplete, isLevelUnlocked } from '../logic/progress';
 
 type Props = {
   levels: Level[];
   currentLevelIndex: number;
-  completed: string[];
+  progress: VariantProgress;
   onSelectLevel: (index: number) => void;
 };
 
-export default function LevelPath({ levels, currentLevelIndex, completed, onSelectLevel }: Props) {
+export default function LevelPath({ levels, currentLevelIndex, progress, onSelectLevel }: Props) {
   return (
     <View style={styles.row}>
       {levels.map((level, index) => {
-        const unlocked = isLevelUnlocked(levels, index, completed);
-        const done = isLevelComplete(level, completed);
+        const unlocked = isLevelUnlocked(levels, index, progress);
+        const done = isLevelComplete(level, progress.completed);
         const isCurrent = index === currentLevelIndex;
 
         return (

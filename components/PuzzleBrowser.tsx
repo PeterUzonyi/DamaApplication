@@ -1,12 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import PuzzleSolver from './PuzzleSolver';
 import LevelPath from './LevelPath';
 import PuzzleDots from './PuzzleDots';
 import { INTERNATIONAL_RULES, RUSSIAN_RULES, Variant } from '../logic/engine';
 import { RUSSIAN_LEVELS, INTERNATIONAL_LEVELS } from '../logic/levelsData';
 import {
-  INITIAL_PROGRESS,
   VariantProgress,
   goToNext,
   goToNextLevel,
@@ -15,14 +14,50 @@ import {
   selectLevel,
   selectPuzzle,
 } from '../logic/progress';
+import { EMPTY_STORED_PROGRESS, StoredProgress, loadProgress, saveProgress } from '../logic/cloudProgress';
+import { useAuth } from '../logic/authContext';
 
 export default function PuzzleBrowser() {
+  const { user, signOut } = useAuth();
   const [variant, setVariant] = useState<Variant>('russian');
-  // Mindkét variáns saját haladását külön tároljuk, így váltáskor megmarad
-  const [progress, setProgress] = useState<{ russian: VariantProgress; international: VariantProgress }>({
-    russian: INITIAL_PROGRESS,
-    international: INITIAL_PROGRESS,
-  });
+  const [progress, setProgress] = useState<StoredProgress | null>(null); // null = még töltjük Firestore-ból
+  const [saveError, setSaveError] = useState('');
+
+  // Betöltés bejelentkezéskor (ill. ha valamiért másik felhasználóra váltana)
+  useEffect(() => {
+    let cancelled = false;
+    setProgress(null);
+    loadProgress(user!.uid).then(loaded => {
+      if (!cancelled) setProgress(loaded);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  // Mentés Firestore-ba minden alkalommal, amikor a haladás változik (a kezdeti
+  // betöltést nem írjuk vissza feleslegesen - lásd az isFirstRun ref-et)
+  const isFirstRun = useRef(true);
+  useEffect(() => {
+    if (!progress) return;
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return;
+    }
+    setSaveError('');
+    saveProgress(user!.uid, progress).catch(() => {
+      setSaveError('A haladás mentése nem sikerült. Ellenőrizd az internetkapcsolatot.');
+    });
+  }, [progress, user]);
+
+  if (!progress) {
+    return (
+      <View style={styles.loadingBox}>
+        <ActivityIndicator size="large" color="#769656" />
+        <Text style={styles.loadingText}>Haladás betöltése...</Text>
+      </View>
+    );
+  }
 
   const levels = variant === 'russian' ? RUSSIAN_LEVELS : INTERNATIONAL_LEVELS;
   const rules = variant === 'russian' ? RUSSIAN_RULES : INTERNATIONAL_RULES;
@@ -31,15 +66,15 @@ export default function PuzzleBrowser() {
   const puzzle = level.puzzles[current.puzzleIndex];
 
   function update(fn: (p: VariantProgress) => VariantProgress) {
-    setProgress(prev => ({ ...prev, [variant]: fn(prev[variant]) }));
+    setProgress(prev => (prev ? { ...prev, [variant]: fn(prev[variant]) } : prev));
   }
 
   function handleSolved() {
-    update(p => markSolved(p, puzzleKey(level, puzzle)));
+    update(p => markSolved(p, puzzleKey(level, puzzle), levels));
   }
 
   function handleNext() {
-    update(p => goToNext(markSolved(p, puzzleKey(level, puzzle)), levels));
+    update(p => goToNext(markSolved(p, puzzleKey(level, puzzle), levels), levels));
   }
 
   function handleSelectLevel(index: number) {
@@ -58,6 +93,15 @@ export default function PuzzleBrowser() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.topBar}>
+        <Text style={styles.userEmail}>{user?.email}</Text>
+        <Pressable onPress={() => signOut()}>
+          <Text style={styles.signOutText}>Kijelentkezés</Text>
+        </Pressable>
+      </View>
+
+      {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
+
       <View style={styles.variantSwitcher}>
         <Pressable
           onPress={() => setVariant('russian')}
@@ -76,7 +120,7 @@ export default function PuzzleBrowser() {
       <LevelPath
         levels={levels}
         currentLevelIndex={current.levelIndex}
-        completed={current.completed}
+        progress={current}
         onSelectLevel={handleSelectLevel}
       />
 
@@ -123,6 +167,38 @@ export default function PuzzleBrowser() {
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
+    width: '100%',
+  },
+  loadingBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  loadingText: {
+    color: '#555',
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 420,
+    paddingHorizontal: 16,
+    marginBottom: 6,
+  },
+  userEmail: {
+    fontSize: 12,
+    color: '#555',
+  },
+  signOutText: {
+    fontSize: 12,
+    color: '#b00020',
+  },
+  saveError: {
+    fontSize: 12,
+    color: '#b00020',
+    marginBottom: 6,
   },
   variantSwitcher: {
     flexDirection: 'row',
