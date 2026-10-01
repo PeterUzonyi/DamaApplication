@@ -1,14 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import PuzzleSolver from './PuzzleSolver';
-import LevelPath from './LevelPath';
+import LevelMap from './LevelMap';
 import PuzzleDots from './PuzzleDots';
 import { INTERNATIONAL_RULES, RUSSIAN_RULES, Variant } from '../logic/engine';
 import { RUSSIAN_LEVELS, INTERNATIONAL_LEVELS } from '../logic/levelsData';
 import {
   VariantProgress,
   goToNext,
-  goToNextLevel,
   markSolved,
   puzzleKey,
   selectLevel,
@@ -17,9 +16,12 @@ import {
 import { EMPTY_STORED_PROGRESS, StoredProgress, loadProgress, saveProgress } from '../logic/cloudProgress';
 import { useAuth } from '../logic/authContext';
 
+type MapOrLevel = 'map' | 'level';
+
 export default function PuzzleBrowser() {
   const { user, signOut } = useAuth();
   const [variant, setVariant] = useState<Variant>('russian');
+  const [view, setView] = useState<MapOrLevel>('map');
   const [progress, setProgress] = useState<StoredProgress | null>(null); // null = még töltjük Firestore-ból
   const [saveError, setSaveError] = useState('');
 
@@ -79,23 +81,37 @@ export default function PuzzleBrowser() {
 
   function handleSelectLevel(index: number) {
     update(p => selectLevel(p, levels, index));
+    setView('level');
   }
 
   function handleSelectPuzzle(index: number) {
     update(p => selectPuzzle(p, index));
   }
 
-  function handleNextLevel() {
-    update(p => goToNextLevel(p, levels));
+  function handleBackToMap() {
+    setView('map');
   }
 
-  const isLastLevel = current.levelIndex === levels.length - 1;
+  function handleVariantChange(v: Variant) {
+    setVariant(v);
+    setView('map');
+  }
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.topBar}>
-        <Text style={styles.userEmail}>{user?.email}</Text>
-        <Pressable onPress={() => signOut()}>
+        <Text style={styles.userEmail} numberOfLines={1}>
+          {user?.email}
+        </Text>
+        <Pressable
+          onPress={() => signOut()}
+          style={styles.signOutButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.signOutText}>Kijelentkezés</Text>
         </Pressable>
       </View>
@@ -104,70 +120,76 @@ export default function PuzzleBrowser() {
 
       <View style={styles.variantSwitcher}>
         <Pressable
-          onPress={() => setVariant('russian')}
+          onPress={() => handleVariantChange('russian')}
           style={[styles.variantButton, variant === 'russian' && styles.variantButtonActive]}
         >
           <Text style={styles.variantButtonText}>Orosz dáma</Text>
         </Pressable>
         <Pressable
-          onPress={() => setVariant('international')}
+          onPress={() => handleVariantChange('international')}
           style={[styles.variantButton, variant === 'international' && styles.variantButtonActive]}
         >
           <Text style={styles.variantButtonText}>Nemzetközi dáma</Text>
         </Pressable>
       </View>
 
-      <LevelPath
-        levels={levels}
-        currentLevelIndex={current.levelIndex}
-        progress={current}
-        onSelectLevel={handleSelectLevel}
-      />
+      {view === 'map' ? (
+        <LevelMap levels={levels} progress={current} onSelectLevel={handleSelectLevel} />
+      ) : (
+        <View style={styles.levelView}>
+          <Pressable onPress={handleBackToMap} style={styles.backButton} hitSlop={8}>
+            <Text style={styles.backButtonText}>‹ Pálya</Text>
+          </Pressable>
 
-      {current.screen === 'levelComplete' ? (
-        <View style={styles.completeBox}>
-          <Text style={styles.completeTitle}>🎉 {level.title} kész!</Text>
-          <Text style={styles.completeText}>
-            Az összes feladványt megoldottad ezen a szinten.
-          </Text>
-          {isLastLevel ? (
-            <Text style={styles.completeText}>Ez volt az utolsó elérhető szint egyelőre.</Text>
+          {current.screen === 'levelComplete' ? (
+            <View style={styles.completeBox}>
+              <Text style={styles.completeTitle}>🎉 {level.title} kész!</Text>
+              <Text style={styles.completeText}>
+                Az összes feladványt megoldottad ezen a szinten.
+              </Text>
+              <Pressable style={styles.primaryButton} onPress={handleBackToMap}>
+                <Text style={styles.primaryButtonText}>Vissza a pályához</Text>
+              </Pressable>
+            </View>
           ) : (
-            <Pressable style={styles.primaryButton} onPress={handleNextLevel}>
-              <Text style={styles.primaryButtonText}>Következő szint</Text>
-            </Pressable>
+            <>
+              <PuzzleDots
+                level={level}
+                currentIndex={current.puzzleIndex}
+                completed={current.completed}
+                onSelect={handleSelectPuzzle}
+              />
+              <Text style={styles.counter}>
+                {level.title} – {current.puzzleIndex + 1}. / {level.puzzles.length} ({puzzle.id})
+              </Text>
+
+              {/* A key miatt feladvány- vagy módváltáskor mindig tiszta állapotból indul a megoldás */}
+              <PuzzleSolver
+                key={`${variant}-${level.id}-${puzzle.id}`}
+                puzzle={puzzle}
+                rules={rules}
+                onNext={handleNext}
+                onSolved={handleSolved}
+              />
+            </>
           )}
         </View>
-      ) : (
-        <>
-          <PuzzleDots
-            level={level}
-            currentIndex={current.puzzleIndex}
-            completed={current.completed}
-            onSelect={handleSelectPuzzle}
-          />
-          <Text style={styles.counter}>
-            {level.title} – {current.puzzleIndex + 1}. / {level.puzzles.length} ({puzzle.id})
-          </Text>
-
-          {/* A key miatt feladvány- vagy módváltáskor mindig tiszta állapotból indul a megoldás */}
-          <PuzzleSolver
-            key={`${variant}-${level.id}-${puzzle.id}`}
-            puzzle={puzzle}
-            rules={rules}
-            onNext={handleNext}
-            onSolved={handleSolved}
-          />
-        </>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
+  scroll: {
+    flex: 1,
     width: '100%',
+  },
+  scrollContent: {
+    alignItems: 'center',
+    paddingTop: 56,
+    paddingBottom: 60,
+    paddingHorizontal: 16,
+    minHeight: '100%',
   },
   loadingBox: {
     flex: 1,
@@ -184,31 +206,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
     maxWidth: 420,
-    paddingHorizontal: 16,
-    marginBottom: 6,
+    marginBottom: 20,
   },
   userEmail: {
     fontSize: 12,
     color: '#555',
+    flexShrink: 1,
+    marginRight: 12,
+  },
+  signOutButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
   signOutText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#b00020',
+    fontWeight: '600',
   },
   saveError: {
     fontSize: 12,
     color: '#b00020',
-    marginBottom: 6,
+    marginBottom: 10,
   },
   variantSwitcher: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 24,
     gap: 8,
   },
   variantButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#769656',
@@ -218,6 +246,21 @@ const styles = StyleSheet.create({
   },
   variantButtonText: {
     fontSize: 13,
+  },
+  levelView: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 8,
+  },
+  backButtonText: {
+    fontSize: 15,
+    color: '#769656',
+    fontWeight: '600',
   },
   counter: {
     textAlign: 'center',
