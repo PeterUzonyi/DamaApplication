@@ -5,13 +5,14 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  updateProfile,
 } from 'firebase/auth';
 import { getFirebaseAuth } from '../lib/firebase';
 
 type AuthContextValue = {
   user: User | null;
   initializing: boolean; // igaz, amíg még nem tudjuk, be van-e jelentkezve valaki
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, username: string) => Promise<string>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -31,8 +32,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
-  async function signUp(email: string, password: string) {
-    await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
+  async function signUp(email: string, password: string, username: string) {
+    const credential = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
+    // A felhasználónevet a Firebase Auth saját `displayName` mezőjében tároljuk -
+    // nincs szükség külön Firestore írásra csak ehhez az egy mezőhöz.
+    await updateProfile(credential.user, { displayName: username });
+    // Az onAuthStateChanged által kapott `user` objektum még a régi (displayName
+    // nélküli) állapotot tartalmazhatja, ezért frissítjük a context state-et is.
+    setUser({ ...credential.user });
+    return credential.user.uid;
   }
 
   async function signIn(email: string, password: string) {

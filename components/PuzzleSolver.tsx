@@ -15,8 +15,12 @@ type Props = {
   puzzle: Puzzle;
   rules: RuleSet;
   onNext: () => void;
-  onSolved?: () => void;
+  // hadMistake: igaz, ha az aktuális (utolsó "Újrakezdés" óta tartó) próbálkozás alatt
+  // volt legalább egy rossz lépés - ez dönti el a Glicko-2 pontszámítást (győzelem/vereség).
+  onSolved?: (hadMistake: boolean) => void;
 };
+
+const WRONG_MOVE_MESSAGE = 'Nem ez a megoldás lépése. Próbáld újra!';
 
 // FONTOS: a szülő `key`-jel hozza létre ezt a komponenst (variáns + feladvány azonosító),
 // ezért feladványváltáskor vagy módváltáskor mindig tiszta, "még el sem kezdett" állapotból indul.
@@ -26,6 +30,7 @@ export default function PuzzleSolver({ puzzle, rules, onNext, onSolved }: Props)
   const ctx = useMemo(() => ({ solution: solution ?? [], rules }), [solution, rules]);
 
   const [session, setSession] = useState<SessionState>(() => createSession(puzzle, solution));
+  const [hadMistake, setHadMistake] = useState(false);
 
   // Amikor a fekete jön, egy kis szünet után lépi meg a megoldás szerinti választ
   useEffect(() => {
@@ -36,10 +41,17 @@ export default function PuzzleSolver({ puzzle, rules, onNext, onSolved }: Props)
     return () => clearTimeout(timer);
   }, [session.phase, session.moveIndex, ctx]);
 
+  // Rossz lépés felismerése - ez számít "hibának" a pontszámításnál
+  useEffect(() => {
+    if (session.message === WRONG_MOVE_MESSAGE) {
+      setHadMistake(true);
+    }
+  }, [session.message]);
+
   // A megoldás pillanatában (csak egyszer, feladványonként) jelezzük a szülőnek
   useEffect(() => {
     if (session.phase === 'solved') {
-      onSolved?.();
+      onSolved?.(hadMistake);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.phase]);
@@ -50,6 +62,7 @@ export default function PuzzleSolver({ puzzle, rules, onNext, onSolved }: Props)
 
   function handleReset() {
     setSession(createSession(puzzle, solution));
+    setHadMistake(false);
   }
 
   const isSolved = session.phase === 'solved';

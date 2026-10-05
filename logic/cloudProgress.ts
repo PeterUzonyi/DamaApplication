@@ -1,23 +1,35 @@
-// A felhasználó haladását a Firestore-ban a users/{uid} dokumentumban tároljuk.
-// Egyetlen dokumentum mindkét variánsnak, mert kicsi az adat és ritkán módosul sokat.
+// A felhasználó minden adatát (haladás, pontszám, napi sorozat) a Firestore-ban
+// a users/{uid} dokumentumban tároljuk - egyetlen dokumentum, mert kicsi az adat.
 
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { INITIAL_PROGRESS, VariantProgress } from './progress';
+import { Rating, newRating } from './glicko2';
+import { StreakState, newStreak } from './streak';
 
-export type StoredProgress = {
+export type StoredUserData = {
   russian: VariantProgress;
   international: VariantProgress;
+  russianRating: Rating;
+  internationalRating: Rating;
+  streak: StreakState;
 };
 
-export const EMPTY_STORED_PROGRESS: StoredProgress = {
-  russian: INITIAL_PROGRESS,
-  international: INITIAL_PROGRESS,
-};
+export function emptyUserData(dailyGoal = 1): StoredUserData {
+  return {
+    russian: INITIAL_PROGRESS,
+    international: INITIAL_PROGRESS,
+    russianRating: newRating(1400),
+    internationalRating: newRating(1400),
+    streak: newStreak(dailyGoal),
+  };
+}
+
+export const EMPTY_STORED_PROGRESS = emptyUserData();
 
 // Csak azt mentjük/olvassuk, ami a szerveren releváns - a `screen` (melyik képernyőn
 // állunk épp) tisztán UI-állapot, nem kell perzisztálni, induláskor úgyis "puzzle"-ra áll.
-function toStorable(p: VariantProgress) {
+function progressToStorable(p: VariantProgress) {
   return {
     levelIndex: p.levelIndex,
     puzzleIndex: p.puzzleIndex,
@@ -26,8 +38,8 @@ function toStorable(p: VariantProgress) {
   };
 }
 
-function fromStorable(raw: unknown): VariantProgress {
-  const r = (raw ?? {}) as Partial<ReturnType<typeof toStorable>>;
+function progressFromStorable(raw: unknown): VariantProgress {
+  const r = (raw ?? {}) as Partial<ReturnType<typeof progressToStorable>>;
   return {
     levelIndex: r.levelIndex ?? 0,
     puzzleIndex: r.puzzleIndex ?? 0,
@@ -37,25 +49,86 @@ function fromStorable(raw: unknown): VariantProgress {
   };
 }
 
-export async function loadProgress(uid: string): Promise<StoredProgress> {
-  const snap = await getDoc(doc(db, 'users', uid));
-  if (!snap.exists()) return EMPTY_STORED_PROGRESS;
-  const data = snap.data();
+function ratingFromStorable(raw: unknown): Rating {
+  const r = (raw ?? {}) as Partial<Rating>;
   return {
-    russian: fromStorable(data.russian),
-    international: fromStorable(data.international),
+    rating: r.rating ?? 1400,
+    deviation: r.deviation ?? 350,
+    volatility: r.volatility ?? 0.06,
   };
 }
 
-// `merge: true`, hogy ha csak az egyik variáns változott, a másikat ne írjuk felül semmivel
-export async function saveProgress(uid: string, progress: StoredProgress): Promise<void> {
+function streakFromStorable(raw: unknown): StreakState {
+  const r = (raw ?? {}) as Partial<StreakState>;
+  return {
+    dailyGoal: r.dailyGoal ?? 1,
+    current: r.current ?? 0,
+    longest: r.longest ?? 0,
+    solvedToday: r.solvedToday ?? 0,
+    solvedTodayDate: r.solvedTodayDate ?? null,
+    lastGoalMetDate: r.lastGoalMetDate ?? null,
+  };
+}
+
+export async function loadUserData(uid: string): Promise<StoredUserData> {
+  const snap = await getDoc(doc(db, 'users', uid));
+  if (!snap.exists()) return emptyUserData();
+  const data = snap.data();
+  return {
+    russian: progressFromStorable(data.russian),
+    international: progressFromStorable(data.international),
+    russianRating: ratingFromStorable(data.russianRating),
+    internationalRating: ratingFromStorable(data.internationalRating),
+    streak: streakFromStorable(data.streak),
+  };
+}
+
+// `merge: true`, hogy részleges frissítésnél (pl. csak a streak változott) a többi
+// mezőt ne írjuk felül semmivel.
+export async function saveUserData(uid: string, data: StoredUserData): Promise<void> {
   await setDoc(
     doc(db, 'users', uid),
     {
-      russian: toStorable(progress.russian),
-      international: toStorable(progress.international),
+      russian: progressToStorable(data.russian),
+      international: progressToStorable(data.international),
+      russianRating: data.russianRating,
+      internationalRating: data.internationalRating,
+      streak: data.streak,
       updatedAt: Date.now(),
     },
     { merge: true }
   );
+}
+
+// Egy adott felhasználó kezdeti adatainak létrehozása regisztrációkor
+// (ekkor még csak a napi célt kérdezzük meg, minden más alapértékről indul).
+export async function initializeUserData(uid: string, dailyGoal: number): Promise<void> {
+  await saveUserData(uid, emptyUserData(dailyGoal));
+}
+
+// --- Feladvány-pontszámok (megosztott, nem felhasználónkénti adat) ---
+// A feladvány "ellenfélként" viselkedik a Glicko-2 rendszerben: minden kísérlet után
+// az ő pontszáma is változik, ahogy a lidraughts-nál is.
+
+function puzzleDocId(variant: 'russian' | 'international', levelId: string, puzzleId: string): string {
+  return `${variant}_${levelId}_${puzzleId}`;
+}
+
+export async function loadPuzzleRating(
+  variant: 'russian' | 'international',
+  levelId: string,
+  puzzleId: string
+): Promise<Rating> {
+  const snap = await getDoc(doc(db, 'puzzleRatings', puzzleDocId(variant, levelId, puzzleId)));
+  if (!snap.exists()) return newRating(1400);
+  return ratingFromStorable(snap.data());
+}
+
+export async function savePuzzleRating(
+  variant: 'russian' | 'international',
+  levelId: string,
+  puzzleId: string,
+  rating: Rating
+): Promise<void> {
+  await setDoc(doc(db, 'puzzleRatings', puzzleDocId(variant, levelId, puzzleId)), rating);
 }
