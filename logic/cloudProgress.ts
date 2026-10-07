@@ -1,11 +1,12 @@
 // A felhasználó minden adatát (haladás, pontszám, napi sorozat) a Firestore-ban
 // a users/{uid} dokumentumban tároljuk - egyetlen dokumentum, mert kicsi az adat.
 
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { INITIAL_PROGRESS, VariantProgress } from './progress';
 import { Rating, newRating } from './glicko2';
 import { StreakState, newStreak } from './streak';
+import { HistoryEntry } from './historyStats';
 
 export type StoredUserData = {
   russian: VariantProgress;
@@ -131,4 +132,19 @@ export async function savePuzzleRating(
   rating: Rating
 ): Promise<void> {
   await setDoc(doc(db, 'puzzleRatings', puzzleDocId(variant, levelId, puzzleId)), rating);
+}
+
+// --- Megoldás-napló (a profil statisztikáihoz és a pontszám-grafikonhoz) ---
+// users/{uid}/history/{autoId} - minden feladvány-megoldás egy bejegyzés.
+
+export async function appendHistoryEntry(uid: string, entry: HistoryEntry): Promise<void> {
+  await addDoc(collection(db, 'users', uid, 'history'), entry);
+}
+
+// A legutóbbi `max` bejegyzést tölti be (nem az összeset, hogy ne nőjön korlátlanul
+// az olvasási költség/méret egy régóta aktív felhasználónál).
+export async function loadHistory(uid: string, max = 1000): Promise<HistoryEntry[]> {
+  const q = query(collection(db, 'users', uid, 'history'), orderBy('timestamp', 'desc'), limit(max));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data() as HistoryEntry);
 }

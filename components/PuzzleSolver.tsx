@@ -10,6 +10,7 @@ import {
   parseSolution,
   playComputerMove,
 } from '../logic/puzzleSession';
+import { useTheme } from '../logic/themeContext';
 
 type Props = {
   puzzle: Puzzle;
@@ -67,11 +68,12 @@ export default function PuzzleSolver({ puzzle, rules, onNext, onSolved }: Props)
 
   const isSolved = session.phase === 'solved';
   const isError = session.phase === 'error';
+  const { colors } = useTheme();
 
   return (
     <View style={styles.container}>
       {validationError && (
-        <Text style={styles.warning}>
+        <Text style={[styles.warning, { color: colors.danger }]}>
           Hibás feladvány ({puzzle.id}): {validationError}
         </Text>
       )}
@@ -87,22 +89,30 @@ export default function PuzzleSolver({ puzzle, rules, onNext, onSolved }: Props)
       <Text
         style={[
           styles.message,
-          isSolved && styles.messageSolved,
-          isError && styles.messageError,
+          { color: colors.text },
+          isSolved && { color: colors.accent, fontWeight: 'bold' },
+          isError && { color: colors.danger },
         ]}
       >
         {session.message || HINT_MESSAGE}
       </Text>
 
       <View style={styles.buttonRow}>
-        <Pressable style={[styles.button, styles.secondaryButton]} onPress={handleReset}>
-          <Text style={styles.secondaryButtonText}>Újrakezdés</Text>
+        <Pressable
+          style={[styles.button, { borderColor: colors.accent }]}
+          onPress={handleReset}
+        >
+          <Text style={{ color: colors.text }}>Újrakezdés</Text>
         </Pressable>
         <Pressable
-          style={[styles.button, isSolved ? styles.primaryButton : styles.secondaryButton]}
+          style={[
+            styles.button,
+            { borderColor: colors.accent },
+            isSolved && { backgroundColor: colors.accent },
+          ]}
           onPress={onNext}
         >
-          <Text style={isSolved ? styles.primaryButtonText : styles.secondaryButtonText}>
+          <Text style={{ color: isSolved ? colors.accentText : colors.text, fontWeight: isSolved ? 'bold' : 'normal' }}>
             Következő
           </Text>
         </Pressable>
@@ -116,7 +126,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   warning: {
-    color: '#b00020',
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 8,
@@ -128,13 +137,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     minHeight: 22,
   },
-  messageSolved: {
-    color: '#2e7d32',
-    fontWeight: 'bold',
-  },
-  messageError: {
-    color: '#b00020',
-  },
   buttonRow: {
     flexDirection: 'row',
     gap: 12,
@@ -145,19 +147,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#769656',
-  },
-  primaryButton: {
-    backgroundColor: '#769656',
-  },
-  secondaryButton: {
-    backgroundColor: 'transparent',
-  },
-  primaryButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  secondaryButtonText: {
-    color: '#333',
   },
 });

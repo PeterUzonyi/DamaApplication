@@ -76,6 +76,12 @@ export function displayedStreak(streak: StreakState, today: string): number {
   return isStreakActiveToday(streak, today) ? streak.current : 0;
 }
 
+// Igaz, ha a `recordSolve` hívás EREDMÉNYEKÉNT érte el éppen most a napi célt
+// (tehát előtte még nem, utána már igen) - erre épül az ünneplő képernyő.
+export function justReachedGoalToday(before: StreakState, after: StreakState, today: string): boolean {
+  return before.lastGoalMetDate !== today && after.lastGoalMetDate === today;
+}
+
 export function withDailyGoal(streak: StreakState, dailyGoal: number): StreakState {
   return { ...streak, dailyGoal: Math.max(1, Math.round(dailyGoal)) };
 }

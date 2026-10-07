@@ -13,6 +13,7 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onSignOut: () => void;
+  uid: string;
   username: string;
   email: string;
   russianLevels: Level[];
@@ -86,6 +87,7 @@ export default function MenuOverlay(props: Props) {
 
           {sub === 'profile' && (
             <ProfileScreen
+              uid={props.uid}
               username={props.username}
               email={props.email}
               russianLevels={props.russianLevels}

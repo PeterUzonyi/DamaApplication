@@ -1,11 +1,15 @@
-import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useTheme } from '../logic/themeContext';
 import { Level, VariantProgress, isLevelComplete, isPuzzleDone } from '../logic/progress';
 import { Rating } from '../logic/glicko2';
 import { StreakState, displayedStreak, todayString } from '../logic/streak';
+import { HistoryEntry, Variant, aggregateDailyStats, ratingSeries } from '../logic/historyStats';
+import { loadHistory } from '../logic/cloudProgress';
+import RatingChart from './RatingChart';
 
 type Props = {
+  uid: string;
   username: string;
   email: string;
   russianLevels: Level[];
@@ -32,6 +36,7 @@ function levelSummary(levels: Level[], progress: VariantProgress) {
 }
 
 export default function ProfileScreen({
+  uid,
   username,
   email,
   russianLevels,
@@ -47,6 +52,31 @@ export default function ProfileScreen({
   const ru = levelSummary(russianLevels, russianProgress);
   const intl = levelSummary(internationalLevels, internationalProgress);
   const streakCount = displayedStreak(streak, todayString());
+
+  const [history, setHistory] = useState<HistoryEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState(false);
+  const [chartVariant, setChartVariant] = useState<Variant>('russian');
+
+  useEffect(() => {
+    let cancelled = false;
+    setHistory(null);
+    setHistoryError(false);
+    loadHistory(uid)
+      .then(entries => {
+        if (!cancelled) setHistory(entries);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHistory([]);
+          setHistoryError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
+
+  const dailyStats = history ? aggregateDailyStats(history) : [];
 
   return (
     <View style={styles.container}>
@@ -112,7 +142,78 @@ export default function ProfileScreen({
         </Text>
       </View>
 
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Ismerősök</Text>
+      {historyError && (
+        <Text style={[styles.errorNote, { color: colors.danger }]}>
+          Az előzmények betöltése nem sikerült. Ellenőrizd az internetkapcsolatot, vagy
+          próbáld újra később.
+        </Text>
+      )}
+
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>Pontszám alakulása</Text>
+      <View style={styles.chartVariantRow}>
+        <Pressable
+          onPress={() => setChartVariant('russian')}
+          style={[
+            styles.chartVariantButton,
+            { borderColor: colors.accent },
+            chartVariant === 'russian' && { backgroundColor: colors.accent },
+          ]}
+        >
+          <Text style={{ color: chartVariant === 'russian' ? colors.accentText : colors.text, fontSize: 12 }}>
+            Orosz
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setChartVariant('international')}
+          style={[
+            styles.chartVariantButton,
+            { borderColor: colors.accent },
+            chartVariant === 'international' && { backgroundColor: colors.accent },
+          ]}
+        >
+          <Text style={{ color: chartVariant === 'international' ? colors.accentText : colors.text, fontSize: 12 }}>
+            Nemzetközi
+          </Text>
+        </Pressable>
+      </View>
+
+      {history === null ? (
+        <ActivityIndicator color={colors.accent} style={{ marginVertical: 12 }} />
+      ) : (
+        <RatingChart points={ratingSeries(history, chartVariant)} />
+      )}
+
+      <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 20 }]}>Napi tevékenység</Text>
+      {history === null ? (
+        <ActivityIndicator color={colors.accent} style={{ marginVertical: 12 }} />
+      ) : dailyStats.length === 0 ? (
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.cardLine, { color: colors.textMuted }]}>
+            Még nincs megoldott feladványod.
+          </Text>
+        </View>
+      ) : (
+        dailyStats.map(day => {
+          const parts: string[] = [];
+          if (day.russian.correct + day.russian.incorrect > 0) {
+            parts.push(`Orosz: ${day.russian.correct} jó, ${day.russian.incorrect} rossz`);
+          }
+          if (day.international.correct + day.international.incorrect > 0) {
+            parts.push(`Nemzetközi: ${day.international.correct} jó, ${day.international.incorrect} rossz`);
+          }
+          return (
+            <View
+              key={day.date}
+              style={[styles.dayRow, { borderBottomColor: colors.border }]}
+            >
+              <Text style={[styles.dayDate, { color: colors.text }]}>{day.date}</Text>
+              <Text style={[styles.dayDetail, { color: colors.textMuted }]}>{parts.join(' · ')}</Text>
+            </View>
+          );
+        })
+      )}
+
+      <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 20 }]}>Ismerősök</Text>
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.cardLine, { color: colors.textMuted }]}>
           Ez a funkció hamarosan érkezik.
@@ -207,6 +308,33 @@ const styles = StyleSheet.create({
   },
   cardLine: {
     fontSize: 13,
+    marginTop: 2,
+  },
+  errorNote: {
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  chartVariantRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  chartVariantButton: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  dayRow: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dayDate: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dayDetail: {
+    fontSize: 12,
     marginTop: 2,
   },
 });

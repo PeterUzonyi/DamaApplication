@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, Modal } from 'react-native';
 import PuzzleSolver from './PuzzleSolver';
 import LevelMap from './LevelMap';
 import PuzzleDots from './PuzzleDots';
@@ -21,9 +21,10 @@ import {
   saveUserData,
   loadPuzzleRating,
   savePuzzleRating,
+  appendHistoryEntry,
 } from '../logic/cloudProgress';
 import { playGame } from '../logic/glicko2';
-import { recordSolve, todayString, withDailyGoal } from '../logic/streak';
+import { recordSolve, todayString, withDailyGoal, justReachedGoalToday } from '../logic/streak';
 import { useAuth } from '../logic/authContext';
 import { useTheme } from '../logic/themeContext';
 
@@ -36,6 +37,8 @@ export default function PuzzleBrowser() {
   const [data, setData] = useState<StoredUserData | null>(null); // null = még töltjük Firestore-ból
   const [saveError, setSaveError] = useState('');
   const [ratingNote, setRatingNote] = useState('');
+  const [ratingDelta, setRatingDelta] = useState(0);
+  const [streakCelebration, setStreakCelebration] = useState<number | null>(null); // nem null = mutassuk, az érték az aktuális streak hossza
 
   // Betöltés bejelentkezéskor (ill. ha valamiért másik felhasználóra váltana)
   useEffect(() => {
@@ -88,12 +91,21 @@ export default function PuzzleBrowser() {
     update(d => ({ ...d, [variant]: fn(d[variant]) }));
   }
 
-  // Pontszámítás + streak egy megoldott feladvány után. A feladvány saját, megosztott
-  // pontszámát a Firestore-ban külön tároljuk - betöltjük, frissítjük, visszaírjuk.
+  // Pontszámítás + streak + előzmény-napló egy megoldott feladvány után. A feladvány
+  // saját, megosztott pontszámát a Firestore-ban külön tároljuk - betöltjük, frissítjük,
+  // visszaírjuk.
   async function handleSolved(hadMistake: boolean) {
     if (!data) return;
     updateProgress(p => markSolved(p, puzzleKey(level, puzzle), levels));
-    update(d => ({ ...d, streak: recordSolve(d.streak, todayString()) }));
+
+    const today = todayString();
+    const streakBefore = data.streak;
+    const streakAfter = recordSolve(streakBefore, today);
+    update(d => ({ ...d, streak: streakAfter }));
+
+    if (justReachedGoalToday(streakBefore, streakAfter, today)) {
+      setStreakCelebration(streakAfter.current);
+    }
 
     try {
       const puzzleRating = await loadPuzzleRating(variant, level.id, puzzle.id);
@@ -102,11 +114,19 @@ export default function PuzzleBrowser() {
 
       update(d => ({ ...d, [ratingKey]: result.a }));
       const delta = Math.round(result.a.rating - userRatingBefore.rating);
+      setRatingDelta(delta);
       setRatingNote(delta >= 0 ? `+${delta} pont` : `${delta} pont`);
 
       await savePuzzleRating(variant, level.id, puzzle.id, result.b);
+      await appendHistoryEntry(user!.uid, {
+        timestamp: Date.now(),
+        date: today,
+        variant,
+        correct: !hadMistake,
+        ratingAfter: result.a.rating,
+      });
     } catch {
-      // A pontszám-frissítés hálózati hiba esetén elmarad, de ez nem akadályozza a játékot
+      // A pontszám-frissítés / naplózás hálózati hiba esetén elmarad, de ez nem akadályozza a játékot
     }
   }
 
@@ -227,7 +247,14 @@ export default function PuzzleBrowser() {
                 {level.title} – {current.puzzleIndex + 1}. / {level.puzzles.length} ({puzzle.id})
               </Text>
               {ratingNote ? (
-                <Text style={[styles.ratingNote, { color: colors.accent }]}>{ratingNote}</Text>
+                <Text
+                  style={[
+                    styles.ratingNote,
+                    { color: ratingDelta < 0 ? colors.danger : colors.accent },
+                  ]}
+                >
+                  {ratingNote}
+                </Text>
               ) : null}
 
               {/* A key miatt feladvány- vagy módváltáskor mindig tiszta állapotból indul a megoldás */}
@@ -247,6 +274,7 @@ export default function PuzzleBrowser() {
         visible={menuVisible}
         onClose={() => setMenuVisible(false)}
         onSignOut={() => signOut()}
+        uid={user!.uid}
         username={displayName}
         email={user?.email ?? ''}
         russianLevels={RUSSIAN_LEVELS}
@@ -258,6 +286,24 @@ export default function PuzzleBrowser() {
         streak={data.streak}
         onChangeDailyGoal={handleChangeDailyGoal}
       />
+
+      <Modal visible={streakCelebration !== null} transparent animationType="fade">
+        <View style={styles.celebrationBackdrop}>
+          <View style={[styles.celebrationBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <Text style={styles.celebrationEmoji}>🔥</Text>
+            <Text style={[styles.celebrationTitle, { color: colors.text }]}>Napi cél teljesítve!</Text>
+            <Text style={[styles.celebrationText, { color: colors.textMuted }]}>
+              {streakCelebration} napos sorozatban vagy - így tovább!
+            </Text>
+            <Pressable
+              style={[styles.primaryButton, { backgroundColor: colors.accent }]}
+              onPress={() => setStreakCelebration(null)}
+            >
+              <Text style={[styles.primaryButtonText, { color: colors.accentText }]}>Folytatás</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -367,5 +413,34 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontWeight: 'bold',
+  },
+  celebrationBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  celebrationBox: {
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    gap: 6,
+  },
+  celebrationEmoji: {
+    fontSize: 44,
+  },
+  celebrationTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  celebrationText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 10,
   },
 });

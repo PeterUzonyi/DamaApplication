@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Level, VariantProgress } from '../logic/progress';
 import { frontierIndex, isLevelComplete, isLevelUnlocked, isPuzzleDone } from '../logic/progress';
+import { useTheme } from '../logic/themeContext';
 
 type Props = {
   levels: Level[];
@@ -14,6 +15,8 @@ function solvedCount(level: Level, completed: string[]): number {
 }
 
 export default function LevelMap({ levels, progress, onSelectLevel }: Props) {
+  const { colors } = useTheme();
+
   return (
     <View style={styles.container}>
       {levels.map((level, index) => {
@@ -37,13 +40,17 @@ export default function LevelMap({ levels, progress, onSelectLevel }: Props) {
                 {done ? '✓' : unlocked ? index + 1 : '🔒'}
               </Text>
             </Pressable>
-            <Text style={[styles.label, !unlocked && styles.labelLocked]}>{level.title}</Text>
+            <Text style={[styles.label, { color: unlocked ? colors.text : colors.textMuted }]}>
+              {level.title}
+            </Text>
             {unlocked && (
-              <Text style={styles.sublabel}>
+              <Text style={[styles.sublabel, { color: colors.textMuted }]}>
                 {solved} / {level.puzzles.length} feladvány
               </Text>
             )}
-            {index < levels.length - 1 && <View style={styles.connector} />}
+            {index < levels.length - 1 && (
+              <View style={[styles.connector, { backgroundColor: colors.border }]} />
+            )}
           </View>
         );
       })}
