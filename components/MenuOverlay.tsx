@@ -6,6 +6,7 @@ import SettingsScreen from './SettingsScreen';
 import { Level, VariantProgress } from '../logic/progress';
 import { Rating } from '../logic/glicko2';
 import { StreakState } from '../logic/streak';
+import { ReminderStatus } from '../logic/notifications';
 
 type SubView = 'list' | 'profile' | 'settings';
 
@@ -24,6 +25,9 @@ type Props = {
   internationalRating: Rating;
   streak: StreakState;
   onChangeDailyGoal: (newGoal: number) => void;
+  remindersEnabled: boolean;
+  reminderStatus: ReminderStatus | null;
+  onToggleReminders: (enabled: boolean) => void;
 };
 
 export default function MenuOverlay(props: Props) {
@@ -101,7 +105,13 @@ export default function MenuOverlay(props: Props) {
             />
           )}
 
-          {sub === 'settings' && <SettingsScreen />}
+          {sub === 'settings' && (
+            <SettingsScreen
+              remindersEnabled={props.remindersEnabled}
+              reminderStatus={props.reminderStatus}
+              onToggleReminders={props.onToggleReminders}
+            />
+          )}
         </ScrollView>
       </View>
     </Modal>

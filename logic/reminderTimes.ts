@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
-import { useTheme } from '../logic/themeContext';
-import { Level, VariantProgress, isLevelComplete, isPuzzleDone } from '../logic/progress';
-import { Rating } from '../logic/glicko2';
-import { StreakState, displayedStreak, todayStatus, todayString } from '../logic/streak';
-import { HistoryEntry, Variant, aggregateDailyStats, ratingSeries } from '../logic/historyStats';
-import { loadHistory } from '../logic/cloudProgress';
-import RatingChart from './RatingChart';
+import { useTheme } from './themeContext';
+import { Level, VariantProgress, isLevelComplete, isPuzzleDone } from './progress';
+import { Rating } from './glicko2';
+import { StreakState, displayedStreak, todayStatus, todayString } from './streak';
+import { HistoryEntry, Variant, aggregateDailyStats, ratingSeries } from './historyStats';
+import { loadHistory } from './cloudProgress';
+import RatingChart from '../components/RatingChart';
 
 type Props = {
   uid: string;

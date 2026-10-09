@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, Modal } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, Modal, AppState } from 'react-native';
 import PuzzleSolver from './PuzzleSolver';
 import LevelMap from './LevelMap';
 import PuzzleDots from './PuzzleDots';
@@ -24,7 +24,13 @@ import {
   appendHistoryEntry,
 } from '../logic/cloudProgress';
 import { playGame } from '../logic/glicko2';
-import { recordSolve, todayString, withDailyGoal, justReachedGoalToday } from '../logic/streak';
+import { recordSolve, todayString, withDailyGoal, justReachedGoalToday, isGoalMetToday } from '../logic/streak';
+import {
+  ReminderStatus,
+  getRemindersEnabled,
+  setRemindersEnabled,
+  syncReminders,
+} from '../logic/notifications';
 import { useAuth } from '../logic/authContext';
 import { useTheme } from '../logic/themeContext';
 
@@ -38,6 +44,9 @@ export default function PuzzleBrowser() {
   const [saveError, setSaveError] = useState('');
   const [ratingNote, setRatingNote] = useState('');
   const [ratingDelta, setRatingDelta] = useState(0);
+  const [remindersEnabled, setRemindersEnabledState] = useState<boolean | null>(null); // null = még töltjük
+  const [reminderStatus, setReminderStatus] = useState<ReminderStatus | null>(null);
+  const [appActiveTick, setAppActiveTick] = useState(0); // minden "előtérbe kerülésnél" nő
   const [streakCelebration, setStreakCelebration] = useState<number | null>(null); // nem null = mutassuk, az érték az aktuális streak hossza
 
   // Betöltés bejelentkezéskor (ill. ha valamiért másik felhasználóra váltana)
@@ -66,6 +75,27 @@ export default function PuzzleBrowser() {
       setSaveError('A mentés nem sikerült. Ellenőrizd az internetkapcsolatot.');
     });
   }, [data, user]);
+
+  // Az emlékeztető-kapcsoló eszközön tárolt értéke
+  useEffect(() => {
+    getRemindersEnabled().then(setRemindersEnabledState);
+  }, []);
+
+  // Ha az app visszatér a háttérből (pl. másnap), újra kell számolni az ütemezést
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') setAppActiveTick(t => t + 1);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // A napi emlékeztető újraütemezése minden releváns változás után
+  const goalMetToday = data ? isGoalMetToday(data.streak, todayString()) : false;
+  useEffect(() => {
+    if (!data || remindersEnabled === null) return;
+    syncReminders({ enabled: remindersEnabled, goalMetToday }).then(setReminderStatus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data !== null, goalMetToday, remindersEnabled, appActiveTick]);
 
   if (!data) {
     return (
@@ -157,8 +187,13 @@ export default function PuzzleBrowser() {
     setRatingNote('');
   }
 
+  function handleToggleReminders(enabled: boolean) {
+    setRemindersEnabledState(enabled);
+    setRemindersEnabled(enabled);
+  }
+
   function handleChangeDailyGoal(newGoal: number) {
-    update(d => ({ ...d, streak: withDailyGoal(d.streak, newGoal) }));
+    update(d => ({ ...d, streak: withDailyGoal(d.streak, newGoal, todayString()) }));
   }
 
   const isLastLevel = current.levelIndex === levels.length - 1;
@@ -285,6 +320,9 @@ export default function PuzzleBrowser() {
         internationalRating={data.internationalRating}
         streak={data.streak}
         onChangeDailyGoal={handleChangeDailyGoal}
+        remindersEnabled={remindersEnabled ?? true}
+        reminderStatus={reminderStatus}
+        onToggleReminders={handleToggleReminders}
       />
 
       <Modal visible={streakCelebration !== null} transparent animationType="fade">
